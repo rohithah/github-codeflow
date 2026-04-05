@@ -3,10 +3,51 @@
   "version": "1.0.0",
   "description": "Desktop PR diff viewer for GitHub",
   "main": "dist/main/main.js",
+  "author": "rohithah",
+  "license": "MIT",
   "scripts": {
     "build": "webpack --config webpack.config.js",
     "start": "npm run build && electron dist/main/main.js",
-    "dev": "webpack --config webpack.config.js --mode development && electron dist/main/main.js"
+    "dev": "webpack --config webpack.config.js --mode development && electron dist/main/main.js",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.rohithah.github-codeflow",
+    "productName": "GitHub CodeFlow",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "!node_modules/*/{CHANGELOG.md,README.md,readme.md,test,__tests__,tests,*.ts,*.map}"
+    ],
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Development"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "rohithah",
+      "repo": "github-codeflow"
+    }
   },
   "dependencies": {
     "@octokit/rest": "^21.0.0",
@@ -23,6 +64,7 @@
     "copy-webpack-plugin": "^12.0.2",
     "css-loader": "^7.1.2",
     "electron": "^33.0.0",
+    "electron-builder": "^26.8.1",
     "html-webpack-plugin": "^5.6.0",
     "style-loader": "^4.0.0",
     "ts-loader": "^9.5.1",
