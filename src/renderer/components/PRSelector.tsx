@@ -4,6 +4,7 @@ interface PRInfo {
   number: number;
   title: string;
   state: string;
+  merged: boolean;
   user: string;
   avatar: string;
   created_at: string;
@@ -27,6 +28,7 @@ export default function PRSelector({ onSelectPR }: PRSelectorProps) {
   const [error, setError] = useState('');
   const [searched, setSearched] = useState(false);
   const [recentRepos, setRecentRepos] = useState<string[]>([]);
+  const [filter, setFilter] = useState<'all' | 'open' | 'closed' | 'merged'>('open');
 
   useEffect(() => {
     window.api.getRecentRepos().then(setRecentRepos);
@@ -130,31 +132,54 @@ export default function PRSelector({ onSelectPR }: PRSelectorProps) {
       {error && <div className="error-msg">⚠ {error}</div>}
 
       {prs.length > 0 && (
-        <div className="pr-list">
-          {prs.map((pr) => (
-            <div key={pr.number} className="pr-item" onClick={() => { const { owner, repo } = getOwnerRepo(); onSelectPR(pr, owner, repo); }}>
-              <div className="pr-item-left">
-                <span className={`pr-state pr-state-${pr.state}`}>
-                  {pr.state === 'open' ? '●' : '✓'}
-                </span>
-                <div className="pr-info">
-                  <div className="pr-title">
-                    {pr.title}
-                    <span className="pr-number">#{pr.number}</span>
-                  </div>
-                  <div className="pr-meta">
-                    {pr.user} • {pr.base} ← {pr.head} • updated {timeAgo(pr.updated_at)}
+        <>
+          <div className="pr-filters">
+            <button className={`btn btn-sm ${filter === 'all' ? 'btn-active' : ''}`} onClick={() => setFilter('all')}>
+              All ({prs.length})
+            </button>
+            <button className={`btn btn-sm ${filter === 'open' ? 'btn-active' : ''}`} onClick={() => setFilter('open')}>
+              ● Open ({prs.filter((p) => p.state === 'open').length})
+            </button>
+            <button className={`btn btn-sm ${filter === 'merged' ? 'btn-active' : ''}`} onClick={() => setFilter('merged')}>
+              ⇌ Merged ({prs.filter((p) => p.merged).length})
+            </button>
+            <button className={`btn btn-sm ${filter === 'closed' ? 'btn-active' : ''}`} onClick={() => setFilter('closed')}>
+              ✕ Closed ({prs.filter((p) => p.state === 'closed' && !p.merged).length})
+            </button>
+          </div>
+          <div className="pr-list">
+            {prs
+              .filter((pr) => {
+                if (filter === 'open') return pr.state === 'open';
+                if (filter === 'merged') return pr.merged;
+                if (filter === 'closed') return pr.state === 'closed' && !pr.merged;
+                return true;
+              })
+              .map((pr) => (
+              <div key={pr.number} className="pr-item" onClick={() => { const { owner, repo } = getOwnerRepo(); onSelectPR(pr, owner, repo); }}>
+                <div className="pr-item-left">
+                  <span className={`pr-state ${pr.merged ? 'pr-state-merged' : pr.state === 'open' ? 'pr-state-open' : 'pr-state-closed'}`}>
+                    {pr.merged ? '⇌' : pr.state === 'open' ? '●' : '✕'}
+                  </span>
+                  <div className="pr-info">
+                    <div className="pr-title">
+                      {pr.title}
+                      <span className="pr-number">#{pr.number}</span>
+                    </div>
+                    <div className="pr-meta">
+                      {pr.user} • {pr.base} ← {pr.head} • updated {timeAgo(pr.updated_at)}
+                    </div>
                   </div>
                 </div>
+                <div className="pr-item-right">
+                  <span className="stat-add">+{pr.additions}</span>
+                  <span className="stat-del">-{pr.deletions}</span>
+                  <span className="stat-files">{pr.changed_files} files</span>
+                </div>
               </div>
-              <div className="pr-item-right">
-                <span className="stat-add">+{pr.additions}</span>
-                <span className="stat-del">-{pr.deletions}</span>
-                <span className="stat-files">{pr.changed_files} files</span>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </>
       )}
 
       {searched && !loading && prs.length === 0 && !error && (

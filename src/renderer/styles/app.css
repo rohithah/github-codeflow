@@ -273,6 +273,14 @@ body {
 .pr-state { font-size: 14px; margin-top: 1px; }
 .pr-state-open { color: var(--green); }
 .pr-state-closed { color: var(--red); }
+.pr-state-merged { color: #8250df; }
+
+.pr-filters {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.pr-filters .btn-active { font-weight: 600; }
 
 .pr-info { min-width: 0; }
 .pr-title { font-size: 13px; font-weight: 500; display: flex; align-items: baseline; gap: 6px; }

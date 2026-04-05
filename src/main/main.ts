@@ -117,13 +117,14 @@ function ensureOctokit() {
 ipcMain.handle('github:list-prs', async (_event, owner: string, repo: string) => {
   try {
     const ok = ensureOctokit();
-    const { data } = await ok.pulls.list({ owner, repo, state: 'all', per_page: 30, sort: 'updated' });
+    const { data } = await ok.pulls.list({ owner, repo, state: 'all', per_page: 50, sort: 'updated', direction: 'desc' });
     return {
       success: true,
       prs: data.map((pr: any) => ({
         number: pr.number,
         title: pr.title,
         state: pr.state,
+        merged: !!pr.merged_at,
         user: pr.user?.login,
         avatar: pr.user?.avatar_url,
         created_at: pr.created_at,

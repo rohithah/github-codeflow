@@ -9,6 +9,7 @@ interface PRInfo {
   number: number;
   title: string;
   state: string;
+  merged: boolean;
   user: string;
   avatar: string;
   head: string;
