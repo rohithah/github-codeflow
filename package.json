@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "description": "Desktop PR diff viewer for GitHub",
   "main": "dist/main/main.js",
-  "author": "rohithah",
+  "author": {
+    "name": "rohithah",
+    "email": "rohithah@users.noreply.github.com"
+  },
   "license": "MIT",
   "scripts": {
     "build": "webpack --config webpack.config.js",
