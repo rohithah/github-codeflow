@@ -1,15 +1,15 @@
 # GitHub CodeFlow
 
-A lightweight desktop app for reviewing GitHub pull requests — inspired by Microsoft's internal CodeFlow tool. Built with Electron, React, and TypeScript.
+A lightweight desktop app for reviewing GitHub pull requests. Built with Electron, React, and TypeScript.
 
 ![GitHub CodeFlow](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## What It Does
 
-GitHub CodeFlow gives you a dedicated desktop experience for reviewing PRs, similar to what CodeFlow provides internally at Microsoft — but for any GitHub repo.
+GitHub CodeFlow gives you a dedicated desktop experience for reviewing PRs with a full-file diff view, inline comments, and a file tree — features that go beyond what the GitHub web UI offers.
 
 ### 🔍 Full-File Diff View
-Unlike GitHub's web UI which only shows changed hunks, CodeFlow fetches the **entire file** and highlights changes in context. Deleted lines appear with **red strikethrough**, additions with **yellow highlight**, and change markers in the gutter — just like the classic CodeFlow style.
+Unlike GitHub's web UI which only shows changed hunks, CodeFlow fetches the **entire file** and highlights changes in context. Deleted lines appear with **red strikethrough**, additions with **yellow highlight**, and change markers in the gutter.
 
 ### 📂 File Tree Sidebar
 Changed files are organized in a **collapsible directory tree** (not a flat list). Folders auto-collapse when they have a single child. Each file shows its status badge (Added/Modified/Deleted/Renamed) and +/- line counts. The sidebar is **resizable** by dragging.
