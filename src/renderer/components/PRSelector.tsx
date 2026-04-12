@@ -15,6 +15,7 @@ interface PRInfo {
   head: string;
   headSha: string;
   base: string;
+  baseSha: string;
 }
 
 interface PRSelectorProps {

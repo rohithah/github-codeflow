@@ -15,6 +15,7 @@ interface PRInfo {
   head: string;
   headSha: string;
   base: string;
+  baseSha: string;
   additions: number;
   deletions: number;
   changed_files: number;
@@ -153,7 +154,7 @@ export default function App() {
     setFullPatch(null);
     setDiffLoading(true);
     const result = await window.api.getFullDiff(
-      o, r, file.filename, pr.base, pr.head, file.status, file.previous_filename,
+      o, r, file.filename, pr.baseSha, pr.headSha, file.status, file.previous_filename,
     );
     setDiffLoading(false);
     if (result.success) {

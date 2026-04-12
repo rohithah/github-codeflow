@@ -135,6 +135,7 @@ ipcMain.handle('github:list-prs', async (_event, owner: string, repo: string) =>
         head: pr.head.ref,
         headSha: pr.head.sha,
         base: pr.base.ref,
+        baseSha: pr.base.sha,
       })),
     };
   } catch (error: any) {
@@ -162,6 +163,7 @@ ipcMain.handle('github:get-pr', async (_event, owner: string, repo: string, prNu
         head: pr.head.ref,
         headSha: pr.head.sha,
         base: pr.base.ref,
+        baseSha: pr.base.sha,
       },
     };
   } catch (error: any) {
