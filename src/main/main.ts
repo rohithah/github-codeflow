@@ -265,6 +265,89 @@ ipcMain.handle(
   },
 );
 
+// Fetch PR commits and group them into "iterations" (push groups).
+// Heuristic: consecutive commits whose committer.date timestamps are within
+// ITERATION_GAP_MS of each other belong to the same push. Force-pushes show
+// up naturally as new iterations because their commits carry fresh timestamps.
+ipcMain.handle('github:get-iterations', async (_event, owner: string, repo: string, prNumber: number, prBaseSha: string) => {
+  try {
+    const ok = ensureOctokit();
+    const commits: any[] = [];
+    let page = 1;
+    while (true) {
+      const { data } = await ok.pulls.listCommits({ owner, repo, pull_number: prNumber, per_page: 100, page });
+      commits.push(...data);
+      if (data.length < 100) break;
+      page++;
+    }
+
+    const ITERATION_GAP_MS = 60 * 1000;
+    const groups: any[][] = [];
+    let lastTime = 0;
+    for (const c of commits) {
+      const dateStr = c.commit.committer?.date || c.commit.author?.date;
+      const t = dateStr ? new Date(dateStr).getTime() : 0;
+      if (groups.length === 0 || t - lastTime > ITERATION_GAP_MS) {
+        groups.push([c]);
+      } else {
+        groups[groups.length - 1].push(c);
+      }
+      lastTime = t;
+    }
+
+    let prevHead = prBaseSha;
+    const iterations = groups.map((group, i) => {
+      const head = group[group.length - 1];
+      const iter = {
+        number: i + 1,
+        baseSha: prevHead,
+        headSha: head.sha,
+        commitCount: group.length,
+        pushedAt: head.commit.committer?.date || head.commit.author?.date,
+        commits: group.map((c) => ({
+          sha: c.sha,
+          shortSha: c.sha.substring(0, 7),
+          message: c.commit.message.split('\n')[0],
+          author: c.commit.author?.name || c.author?.login,
+        })),
+      };
+      prevHead = head.sha;
+      return iter;
+    });
+
+    return { success: true, iterations };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Compare two arbitrary refs and return the changed file list.
+// Used for iteration tabs and pairwise iteration comparison.
+ipcMain.handle('github:compare-refs', async (_event, owner: string, repo: string, baseSha: string, headSha: string) => {
+  try {
+    const ok = ensureOctokit();
+    const { data } = await ok.repos.compareCommitsWithBasehead({
+      owner,
+      repo,
+      basehead: `${baseSha}...${headSha}`,
+    });
+    return {
+      success: true,
+      files: (data.files || []).map((f: any) => ({
+        filename: f.filename,
+        status: f.status,
+        additions: f.additions,
+        deletions: f.deletions,
+        changes: f.changes,
+        patch: f.patch,
+        previous_filename: f.previous_filename,
+      })),
+    };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
 // Fetch review comments (threaded) for a PR
 ipcMain.handle('github:get-review-threads', async (_event, owner: string, repo: string, prNumber: number) => {
   try {
@@ -325,7 +408,7 @@ ipcMain.handle(
       const ok = ensureOctokit();
       const position = computePosition(patch, line, side);
       if (position === null) {
-        return { success: false, error: 'This line is not part of the PR diff. Try commenting on a changed line.' };
+        return { success: false, error: 'This line is not part of the diff being viewed.' };
       }
 
       // Find existing pending review via GraphQL
@@ -377,7 +460,16 @@ ipcMain.handle(
         }
       `, { reviewId, body, path: filePath, line, side: side === 'LEFT' ? 'LEFT' : 'RIGHT' });
 
-      const comment = addResult.addPullRequestReviewThread.thread.comments.nodes[0];
+      // GitHub returns thread: null (without throwing) when it can't anchor the
+      // comment to its diff — e.g. an unchanged line too far from any change.
+      const thread = addResult?.addPullRequestReviewThread?.thread;
+      const comment = thread?.comments?.nodes?.[0];
+      if (!comment) {
+        return {
+          success: false,
+          error: 'GitHub couldn\'t place a comment on this line — it\'s too far from any change in the PR. You can comment on changed lines or unchanged lines near a change.',
+        };
+      }
       return {
         success: true,
         comment: {
@@ -392,7 +484,12 @@ ipcMain.handle(
         },
       };
     } catch (error: any) {
-      const msg = error.message || 'Unknown error';
+      let msg = error.message || 'Unknown error';
+      // GitHub rejects inline comments on lines that aren't part of its diff
+      // (e.g. unchanged lines too far from any change) with a 422.
+      if (error.status === 422 || /unprocessable|not part of the diff|must be part of the diff/i.test(msg)) {
+        msg = 'GitHub won\'t accept a comment on this line — it\'s too far from any change in the PR. You can comment on changed lines or unchanged lines near a change.';
+      }
       return { success: false, error: msg };
     }
   },

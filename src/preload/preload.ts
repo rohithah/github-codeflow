@@ -20,6 +20,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('github:get-full-diff', owner, repo, filename, baseRef, headRef, status, previousFilename),
   getReviewThreads: (owner: string, repo: string, prNumber: number) =>
     ipcRenderer.invoke('github:get-review-threads', owner, repo, prNumber),
+  getIterations: (owner: string, repo: string, prNumber: number, prBaseSha: string) =>
+    ipcRenderer.invoke('github:get-iterations', owner, repo, prNumber, prBaseSha),
+  compareRefs: (owner: string, repo: string, baseSha: string, headSha: string) =>
+    ipcRenderer.invoke('github:compare-refs', owner, repo, baseSha, headSha),
   createReviewComment: (owner: string, repo: string, prNumber: number, body: string, commitId: string, path: string, line: number, side: string, patch: string) =>
     ipcRenderer.invoke('github:add-review-comment', owner, repo, prNumber, body, path, line, side, patch),
   submitReview: (owner: string, repo: string, prNumber: number, event: string, body: string, comments?: any[]) =>

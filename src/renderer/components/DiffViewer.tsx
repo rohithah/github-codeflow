@@ -472,7 +472,11 @@ export default function DiffViewer({ file, viewMode, fullPatch, diffLoading, rev
     setCommentError(null);
 
     // Add to pending review on GitHub (GraphQL)
-    const result = await window.api.createReviewComment(owner, repo, pr.number, body, pr.headSha, file.filename, lineNum, side, file.patch || '');
+    // Validate against the full-file diff that's actually rendered (patchSource),
+    // not the truncated changed-hunk patch (file.patch). This allows commenting on
+    // unchanged lines; GitHub remains the final authority and will 422 lines that
+    // are too far from any change.
+    const result = await window.api.createReviewComment(owner, repo, pr.number, body, pr.headSha, file.filename, lineNum, side, patchSource);
 
     if (!result.success) {
       setCommentError(result.error || 'Cannot comment on this line');
@@ -489,7 +493,7 @@ export default function DiffViewer({ file, viewMode, fullPatch, diffLoading, rev
     });
     setCommentLineKey(null);
     setCommentError(null);
-  }, [file, pr, commentLineKey, owner, repo, onAddPendingComment]);
+  }, [file, pr, commentLineKey, owner, repo, onAddPendingComment, patchSource]);
 
   if (!file) {
     return (

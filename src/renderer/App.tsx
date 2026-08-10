@@ -4,6 +4,7 @@ import PRSelector from './components/PRSelector';
 import FileList from './components/FileList';
 import DiffViewer from './components/DiffViewer';
 import SearchAcrossFiles from './components/SearchAcrossFiles';
+import IterationTabs, { Iteration, ActiveRange } from './components/IterationTabs';
 
 interface PRInfo {
   number: number;
@@ -31,8 +32,13 @@ interface FileInfo {
   previous_filename?: string;
 }
 
-export default function App() {
-  const [authenticated, setAuthenticated] = useState(false);
+function rangeShas(range: ActiveRange): { baseSha: string; headSha: string } {
+  if (range.kind === 'all') return { baseSha: range.baseSha, headSha: range.headSha };
+  if (range.kind === 'iteration') return { baseSha: range.iteration.baseSha, headSha: range.iteration.headSha };
+  return { baseSha: range.from.headSha, headSha: range.to.headSha };
+}
+
+export default function App() {  const [authenticated, setAuthenticated] = useState(false);
   const [username, setUsername] = useState('');
   const [avatar, setAvatar] = useState('');
   const [loading, setLoading] = useState(true);
@@ -51,6 +57,8 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [showFindBar, setShowFindBar] = useState(false);
   const [showSearchPanel, setShowSearchPanel] = useState(false);
+  const [iterations, setIterations] = useState<Iteration[]>([]);
+  const [activeRange, setActiveRange] = useState<ActiveRange | null>(null);
   const diffContentRef = useRef<HTMLDivElement>(null);
   const isResizing = useRef(false);
 
@@ -134,27 +142,35 @@ export default function App() {
     setSelectedFile(null);
     setFullPatch(null);
     setReviewThreads([]);
-    const [filesResult, threadsResult] = await Promise.all([
+    setIterations([]);
+    const initialRange: ActiveRange = { kind: 'all', baseSha: pr.baseSha, headSha: pr.headSha };
+    setActiveRange(initialRange);
+    const [filesResult, threadsResult, iterResult] = await Promise.all([
       window.api.getPRFiles(o, r, pr.number),
       window.api.getReviewThreads(o, r, pr.number),
+      window.api.getIterations(o, r, pr.number, pr.baseSha),
     ]);
     if (filesResult.success) {
       setFiles(filesResult.files);
       if (filesResult.files.length > 0) {
-        selectFileAndFetchDiff(filesResult.files[0], o, r, pr);
+        selectFileAndFetchDiff(filesResult.files[0], o, r, initialRange);
       }
     }
     if (threadsResult.success) {
       setReviewThreads(threadsResult.threads);
     }
+    if (iterResult.success) {
+      setIterations(iterResult.iterations);
+    }
   };
 
-  const selectFileAndFetchDiff = async (file: FileInfo, o: string, r: string, pr: PRInfo) => {
+  const selectFileAndFetchDiff = async (file: FileInfo, o: string, r: string, range: ActiveRange) => {
     setSelectedFile(file);
     setFullPatch(null);
     setDiffLoading(true);
+    const { baseSha, headSha } = rangeShas(range);
     const result = await window.api.getFullDiff(
-      o, r, file.filename, pr.baseSha, pr.headSha, file.status, file.previous_filename,
+      o, r, file.filename, baseSha, headSha, file.status, file.previous_filename,
     );
     setDiffLoading(false);
     if (result.success) {
@@ -163,8 +179,34 @@ export default function App() {
   };
 
   const handleSelectFile = (file: FileInfo) => {
-    if (selectedPR) {
-      selectFileAndFetchDiff(file, owner, repo, selectedPR);
+    if (selectedPR && activeRange) {
+      selectFileAndFetchDiff(file, owner, repo, activeRange);
+    }
+  };
+
+  const handleSelectRange = async (range: ActiveRange) => {
+    if (!selectedPR) return;
+    setActiveRange(range);
+    setSelectedFile(null);
+    setFullPatch(null);
+    const { baseSha, headSha } = rangeShas(range);
+    // 'all' uses the already-fetched file list to avoid an extra API call.
+    let fileList: FileInfo[] = files;
+    if (range.kind !== 'all') {
+      const result = await window.api.compareRefs(owner, repo, baseSha, headSha);
+      if (result.success) {
+        fileList = result.files;
+        setFiles(result.files);
+      }
+    } else {
+      const result = await window.api.getPRFiles(owner, repo, selectedPR.number);
+      if (result.success) {
+        fileList = result.files;
+        setFiles(result.files);
+      }
+    }
+    if (fileList.length > 0) {
+      selectFileAndFetchDiff(fileList[0], owner, repo, range);
     }
   };
 
@@ -192,8 +234,8 @@ export default function App() {
 
   const handleSearchGoToResult = (filename: string, _lineNum: number) => {
     const file = files.find((f) => f.filename === filename);
-    if (file && selectedPR) {
-      selectFileAndFetchDiff(file, owner, repo, selectedPR);
+    if (file && selectedPR && activeRange) {
+      selectFileAndFetchDiff(file, owner, repo, activeRange);
       setShowSearchPanel(false);
     }
   };
@@ -203,6 +245,8 @@ export default function App() {
     setFiles([]);
     setSelectedFile(null);
     setFullPatch(null);
+    setIterations([]);
+    setActiveRange(null);
   };
 
   if (loading) {
@@ -270,40 +314,51 @@ export default function App() {
         {!selectedPR ? (
           <PRSelector onSelectPR={handleSelectPR} />
         ) : (
-          <div className="diff-layout">
-            {showSearchPanel && (
-              <SearchAcrossFiles
-                files={files}
-                visible={showSearchPanel}
-                onClose={() => setShowSearchPanel(false)}
-                onGoToResult={handleSearchGoToResult}
+          <div className="diff-layout-wrapper">
+            {iterations.length > 0 && activeRange && (
+              <IterationTabs
+                iterations={iterations}
+                active={activeRange}
+                onSelect={handleSelectRange}
+                prBaseSha={selectedPR.baseSha}
+                prHeadSha={selectedPR.headSha}
               />
             )}
-            <FileList
-              files={files}
-              selectedFile={selectedFile}
-              onSelectFile={handleSelectFile}
-              pr={selectedPR}
-              owner={owner}
-              repo={repo}
-              width={sidebarWidth}
-            />
-            <div className="resize-handle" onMouseDown={handleMouseDown} />
-            <DiffViewer
-              file={selectedFile}
-              viewMode={viewMode}
-              fullPatch={fullPatch}
-              diffLoading={diffLoading}
-              reviewThreads={reviewThreads}
-              owner={owner}
-              repo={repo}
-              pr={selectedPR}
-              onCommentPosted={refreshThreads}
-              onAddPendingComment={addPendingComment}
-              pendingComments={pendingComments}
-              showFindBar={showFindBar}
-              onCloseFindBar={() => setShowFindBar(false)}
-            />
+            <div className="diff-layout">
+              {showSearchPanel && (
+                <SearchAcrossFiles
+                  files={files}
+                  visible={showSearchPanel}
+                  onClose={() => setShowSearchPanel(false)}
+                  onGoToResult={handleSearchGoToResult}
+                />
+              )}
+              <FileList
+                files={files}
+                selectedFile={selectedFile}
+                onSelectFile={handleSelectFile}
+                pr={selectedPR}
+                owner={owner}
+                repo={repo}
+                width={sidebarWidth}
+              />
+              <div className="resize-handle" onMouseDown={handleMouseDown} />
+              <DiffViewer
+                file={selectedFile}
+                viewMode={viewMode}
+                fullPatch={fullPatch}
+                diffLoading={diffLoading}
+                reviewThreads={reviewThreads}
+                owner={owner}
+                repo={repo}
+                pr={selectedPR}
+                onCommentPosted={refreshThreads}
+                onAddPendingComment={addPendingComment}
+                pendingComments={pendingComments}
+                showFindBar={showFindBar}
+                onCloseFindBar={() => setShowFindBar(false)}
+              />
+            </div>
           </div>
         )}
       </div>
