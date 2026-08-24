@@ -14,6 +14,8 @@ export interface Api {
   getReviewThreads: (owner: string, repo: string, prNumber: number) => Promise<any>;
   getIterations: (owner: string, repo: string, prNumber: number, prBaseSha: string) => Promise<any>;
   compareRefs: (owner: string, repo: string, baseSha: string, headSha: string) => Promise<any>;
+  getFileContent: (owner: string, repo: string, filePath: string, ref: string) => Promise<any>;
+  getFileRaw: (owner: string, repo: string, filePath: string, ref: string) => Promise<any>;
   createReviewComment: (owner: string, repo: string, prNumber: number, body: string, commitId: string, path: string, line: number, side: string, patch: string) => Promise<any>;
   submitReview: (owner: string, repo: string, prNumber: number, event: string, body: string, comments?: any[]) => Promise<any>;
   getPendingReview: (owner: string, repo: string, prNumber: number) => Promise<any>;

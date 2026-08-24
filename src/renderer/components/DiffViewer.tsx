@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import FindBar from './FindBar';
+import MarkdownPreview, { isMarkdownFile } from './MarkdownPreview';
 
 interface FileInfo {
   filename: string;
@@ -20,6 +21,8 @@ interface DiffViewerProps {
   owner: string;
   repo: string;
   pr: { number: number; headSha: string } | null;
+  baseSha: string;
+  headSha: string;
   onCommentPosted: () => Promise<void>;
   onAddPendingComment: (comment: { path: string; position: number; body: string; line: number; side: string }) => void;
   pendingComments: Array<{ path: string; position: number; body: string; line: number; side: string }>;
@@ -387,11 +390,12 @@ function getChangeGroupIndices(lines: DiffLine[]): number[] {
   return indices;
 }
 
-export default function DiffViewer({ file, viewMode, fullPatch, diffLoading, reviewThreads, owner, repo, pr, onCommentPosted, onAddPendingComment, pendingComments, showFindBar, onCloseFindBar }: DiffViewerProps) {
+export default function DiffViewer({ file, viewMode, fullPatch, diffLoading, reviewThreads, owner, repo, pr, baseSha, headSha, onCommentPosted, onAddPendingComment, pendingComments, showFindBar, onCloseFindBar }: DiffViewerProps) {
   const patchSource = fullPatch || file?.patch || '';
   const lines = useMemo(() => (patchSource ? parsePatch(patchSource) : []), [patchSource]);
   const changeIndices = useMemo(() => getChangeGroupIndices(lines), [lines]);
   const [currentChangeIdx, setCurrentChangeIdx] = useState(0);
+  const [previewMode, setPreviewMode] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; line: DiffLine; idx: number } | null>(null);
   const [commentLineKey, setCommentLineKey] = useState<string | null>(null);
@@ -429,6 +433,7 @@ export default function DiffViewer({ file, viewMode, fullPatch, diffLoading, rev
     setCurrentChangeIdx(0);
     setCommentLineKey(null);
     setContextMenu(null);
+    setPreviewMode(false);
   }, [file?.filename, fullPatch]);
 
   const scrollToChange = useCallback((idx: number) => {
@@ -573,7 +578,23 @@ export default function DiffViewer({ file, viewMode, fullPatch, diffLoading, rev
           <span className="stat-add">+{file.additions}</span>
           <span className="stat-del">-{file.deletions}</span>
         </div>
-        {changeIndices.length > 0 && (
+        {isMarkdownFile(file.filename) && (
+          <div className="view-toggle md-toggle">
+            <button
+              className={`btn btn-sm ${!previewMode ? 'btn-active' : ''}`}
+              onClick={() => setPreviewMode(false)}
+            >
+              Diff
+            </button>
+            <button
+              className={`btn btn-sm ${previewMode ? 'btn-active' : ''}`}
+              onClick={() => setPreviewMode(true)}
+            >
+              Preview
+            </button>
+          </div>
+        )}
+        {!previewMode && changeIndices.length > 0 && (
           <div className="diff-nav">
             <button className="btn btn-sm btn-nav" onClick={goPrev} disabled={currentChangeIdx <= 0} title="Previous change">
               ▲
@@ -585,9 +606,16 @@ export default function DiffViewer({ file, viewMode, fullPatch, diffLoading, rev
           </div>
         )}
       </div>
-      <FindBar visible={showFindBar} onClose={onCloseFindBar} contentRef={contentRef} />
+      <FindBar visible={showFindBar && !previewMode} onClose={onCloseFindBar} contentRef={contentRef} />
       <div className="diff-content" ref={contentRef}>
-        {viewMode === 'split'
+        {previewMode && isMarkdownFile(file.filename) ? (
+          <MarkdownPreview
+            owner={owner}
+            repo={repo}
+            filename={file.filename}
+            gitRef={file.status === 'removed' ? baseSha : headSha}
+          />
+        ) : viewMode === 'split'
           ? <SplitView lines={lines} />
           : <InlineViewWithComments lines={lines} threads={threadsByLine} onContextMenu={handleContextMenu} commentLineKey={commentLineKey} commentElements={commentElements} />}
       </div>

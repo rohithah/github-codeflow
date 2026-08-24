@@ -348,6 +348,50 @@ ipcMain.handle('github:compare-refs', async (_event, owner: string, repo: string
   }
 });
 
+// Fetch raw decoded content of a single file at a given ref (for markdown preview)
+ipcMain.handle('github:get-file-content', async (_event, owner: string, repo: string, filePath: string, ref: string) => {
+  try {
+    const ok = ensureOctokit();
+    const { data } = await ok.repos.getContent({ owner, repo, path: filePath, ref }) as any;
+    if (data && data.content && data.encoding === 'base64') {
+      return { success: true, content: Buffer.from(data.content, 'base64').toString('utf-8') };
+    }
+    return { success: false, error: 'File is empty or not a text file' };
+  } catch (error: any) {
+    if (error.status === 404) return { success: false, error: 'File not found at this revision' };
+    return { success: false, error: error.message };
+  }
+});
+
+// Fetch a binary file (image) at a ref and return it as a data URI (for markdown preview)
+const IMAGE_MIME_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  avif: 'image/avif',
+};
+
+ipcMain.handle('github:get-file-raw', async (_event, owner: string, repo: string, filePath: string, ref: string) => {
+  try {
+    const ok = ensureOctokit();
+    const { data } = await ok.repos.getContent({ owner, repo, path: filePath, ref }) as any;
+    if (data && data.content && data.encoding === 'base64') {
+      const ext = (filePath.split('.').pop() || '').toLowerCase();
+      const mime = IMAGE_MIME_TYPES[ext] || 'application/octet-stream';
+      const base64 = data.content.replace(/\n/g, '');
+      return { success: true, dataUri: `data:${mime};base64,${base64}` };
+    }
+    return { success: false, error: 'Not a file' };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
 // Fetch review comments (threaded) for a PR
 ipcMain.handle('github:get-review-threads', async (_event, owner: string, repo: string, prNumber: number) => {
   try {
