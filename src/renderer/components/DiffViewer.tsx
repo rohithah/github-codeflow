@@ -26,6 +26,7 @@ interface DiffViewerProps {
   onCommentPosted: () => Promise<void>;
   onAddPendingComment: (comment: { path: string; position: number; body: string; line: number; side: string }) => void;
   pendingComments: Array<{ path: string; position: number; body: string; line: number; side: string }>;
+  commentTarget: { path: string; line: number | null; side: 'LEFT' | 'RIGHT'; requestId: number } | null;
   showFindBar: boolean;
   onCloseFindBar: () => void;
 }
@@ -390,7 +391,7 @@ function getChangeGroupIndices(lines: DiffLine[]): number[] {
   return indices;
 }
 
-export default function DiffViewer({ file, viewMode, fullPatch, diffLoading, reviewThreads, owner, repo, pr, baseSha, headSha, onCommentPosted, onAddPendingComment, pendingComments, showFindBar, onCloseFindBar }: DiffViewerProps) {
+export default function DiffViewer({ file, viewMode, fullPatch, diffLoading, reviewThreads, owner, repo, pr, baseSha, headSha, onCommentPosted, onAddPendingComment, pendingComments, commentTarget, showFindBar, onCloseFindBar }: DiffViewerProps) {
   const patchSource = fullPatch || file?.patch || '';
   const lines = useMemo(() => (patchSource ? parsePatch(patchSource) : []), [patchSource]);
   const changeIndices = useMemo(() => getChangeGroupIndices(lines), [lines]);
@@ -435,6 +436,34 @@ export default function DiffViewer({ file, viewMode, fullPatch, diffLoading, rev
     setContextMenu(null);
     setPreviewMode(false);
   }, [file?.filename, fullPatch]);
+
+  useEffect(() => {
+    if (
+      !commentTarget ||
+      commentTarget.path !== file?.filename ||
+      viewMode !== 'unified' ||
+      diffLoading
+    ) return;
+
+    const timeout = window.setTimeout(() => {
+      if (!contentRef.current) return;
+      if (commentTarget.line === null) {
+        contentRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      const key = `${commentTarget.side}:${commentTarget.line}`;
+      const target = contentRef.current.querySelector<HTMLElement>(`[data-comment-key="${key}"]`);
+      if (!target) {
+        contentRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.add('comment-navigation-target');
+      window.setTimeout(() => target.classList.remove('comment-navigation-target'), 1800);
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [commentTarget?.requestId, file?.filename, fullPatch, viewMode, diffLoading]);
 
   const scrollToChange = useCallback((idx: number) => {
     if (!contentRef.current || changeIndices.length === 0) return;
@@ -676,7 +705,7 @@ function InlineViewWithComments({ lines, threads, onContextMenu, commentLineKey,
               </tr>
               {hasComments && (
                 <tr className="comment-row">
-                  <td colSpan={3} className="comment-cell">
+                  <td colSpan={3} className="comment-cell" data-comment-key={lineKey}>
                     {commentElements.get(lineKey)}
                   </td>
                 </tr>

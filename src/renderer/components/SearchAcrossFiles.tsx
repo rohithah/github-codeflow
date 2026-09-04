@@ -75,6 +75,7 @@ export default function SearchAcrossFiles({ files, visible, onClose, onGoToResul
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searched, setSearched] = useState(false);
+  const [selectedResult, setSelectedResult] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const doSearch = useCallback(() => {
@@ -84,6 +85,7 @@ export default function SearchAcrossFiles({ files, visible, onClose, onGoToResul
       return;
     }
     setSearched(true);
+    setSelectedResult(null);
     const allResults: SearchResult[] = [];
     for (const file of files) {
       if (file.patch) {
@@ -139,8 +141,11 @@ export default function SearchAcrossFiles({ files, visible, onClose, onGoToResul
             {fileResults.slice(0, 50).map((r, i) => (
               <div
                 key={i}
-                className="search-result-item"
-                onClick={() => onGoToResult(r.filename, r.lineNum)}
+                className={`search-result-item ${selectedResult === `${r.filename}:${r.lineNum}:${r.type}` ? 'search-result-selected' : ''}`}
+                onClick={() => {
+                  setSelectedResult(`${r.filename}:${r.lineNum}:${r.type}`);
+                  onGoToResult(r.filename, r.lineNum);
+                }}
               >
                 <span className="search-line-num">{r.lineNum}</span>
                 <span className={`search-line-content ${r.type === 'add' ? 'search-line-add' : r.type === 'del' ? 'search-line-del' : ''}`}>

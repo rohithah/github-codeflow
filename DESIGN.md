@@ -76,7 +76,8 @@ src/
     │   ├── FileList.tsx           # Collapsible file tree sidebar
     │   ├── DiffViewer.tsx         # Full-file diff renderer (core)
     │   ├── FindBar.tsx            # Ctrl+F find-in-file
-    │   └── SearchAcrossFiles.tsx  # Ctrl+Shift+F cross-file search
+    │   ├── SearchAcrossFiles.tsx  # Ctrl+Shift+F cross-file search
+    │   └── CommentsNavigator.tsx  # Filterable review-thread navigator
     ├── services/api.d.ts     # Types for window.api
     └── styles/app.css        # All styling
 
@@ -189,7 +190,10 @@ In-file find with highlight + prev/next, scoped to the currently rendered diff.
 Scans `files[].patch` (the GitHub-provided changed-hunk patch) for matches across
 all files in the PR, grouped by file. Note this is **not** a full-file search;
 it only searches within changed hunks because that is what `pulls.listFiles`
-returns.
+returns. Results are shown in a floating overlay over the review workspace.
+Selecting a result navigates to its file without dismissing the overlay and
+highlights the active result, allowing rapid traversal. The panel closes only
+through its close button, Escape, or the cross-file search toggle.
 
 ---
 
@@ -408,7 +412,107 @@ appears in the tab bar; closing it returns to the "All" tab.
 
 
 
-## 10. Adding a New Capability — Checklist
+## 10. Markdown Preview
+
+Markdown files (`.md`, `.markdown`, `.mdx`) can be viewed as a **rendered
+preview** in addition to their diff. A `Diff | Preview` toggle appears in the
+`diff-file-header` only when the selected file is Markdown.
+
+### Behavior
+
+- **Diff** (default) — the normal full-file diff, unchanged.
+- **Preview** — the file rendered to HTML. The version shown respects the file
+  status and the active iteration range:
+  - `removed` → base version (`baseSha` of the active range).
+  - everything else → head version (`headSha` of the active range).
+- Switching files or fetching a new patch resets back to Diff mode.
+
+### Data flow
+
+```
+DiffViewer (previewMode && markdown)
+  → window.api.getFileContent(owner, repo, path, ref)
+      → main: repos.getContent → base64 decode → { content }
+  → marked.parse(content)            # GFM → HTML
+  → DOMPurify.sanitize(html)         # strip scripts/handlers
+  → dangerouslySetInnerHTML
+```
+
+`ref` is the active range's head SHA (or base SHA for deleted files), so the
+preview stays consistent with whichever iteration tab is selected.
+
+### Implementation map
+
+| Concern                     | Location                                          |
+|-----------------------------|---------------------------------------------------|
+| Raw content fetch           | `main.ts` — `github:get-file-content`             |
+| Preload/type binding        | `preload.ts` + `services/api.d.ts` — `getFileContent` |
+| Render + sanitize           | `components/MarkdownPreview.tsx`                   |
+| Toggle + wiring             | `components/DiffViewer.tsx` (`previewMode`, `baseSha`/`headSha` props) |
+| Styling                     | `app.css` — `.markdown-body`, `.md-toggle`        |
+| Dependencies                | `marked` (GFM), `dompurify` (sanitize)            |
+
+### Caveats
+
+- **Sanitization is mandatory.** Rendered HTML is always passed through
+  `DOMPurify.sanitize` before `dangerouslySetInnerHTML`. Never bypass this.
+- **Relative images are inlined.** Repo-relative image paths (e.g.
+  `./img/logo.png` or `/docs/logo.png`) are resolved against the Markdown
+  file's directory, fetched through the authenticated main process
+  (`github:get-file-raw`), and embedded as `data:` URIs — so they render under
+  CSP and work for private repos. Relative **links** are still not rewritten.
+- **CSP allows `data:` and `https:` images.** `index.html`'s `img-src` permits
+  inlined data URIs plus any `https:` host (badges, absolute image URLs).
+- **No inline comments in Preview.** Review comments are a diff-only affordance;
+  the preview is read-only. Right-click commenting and Find (Ctrl+F) are disabled
+  while previewing.
+- **File-size limit inherited.** `get-file-content` uses `repos.getContent`,
+  which caps at ~1 MB (see §8). Larger Markdown files return an error surfaced
+  in the preview pane.
+
+---
+
+
+
+## 11. Comments Navigator
+
+The PR detail toolbar exposes a persistent **Comments** panel containing all
+review threads plus locally tracked pending comments. It floats on the right
+side of the workspace and remains open while reviewers navigate.
+
+### Status model
+
+Thread metadata comes from the paginated GraphQL `reviewThreads` connection.
+Lifecycle and location are independent:
+
+- **Pending** — the root comment belongs to a pending review.
+- **Open** — submitted and unresolved.
+- **Resolved** — `isResolved` is true; `resolvedBy` is shown when available.
+- **Outdated** — `isOutdated` is true and appears as an additional badge.
+
+Filters show counts for All, Open, Resolved, Pending, and Outdated. Threads are
+grouped by path and ordered by line. Each row shows author, age, line, reply
+count, root-comment excerpt, and status badges.
+
+### Navigation
+
+Selecting a thread keeps the panel open and:
+
+1. Highlights the selected list item.
+2. Switches to the All iteration if the current range cannot reliably show the
+   comment location.
+3. Loads the associated file.
+4. Switches to Inline view, where review threads are rendered.
+5. Scrolls to the `(side, currentLine || originalLine)` anchor and briefly
+   highlights the inline thread.
+
+If no line is available, the file opens at the top. Opening Comments closes
+cross-file Search and Find; the panel closes through its toolbar toggle, close
+button, or Escape.
+
+---
+
+## 12. Adding a New Capability — Checklist
 
 When adding a feature that needs new data from GitHub:
 
@@ -425,7 +529,7 @@ When adding a feature that needs new data from GitHub:
 
 ---
 
-## 11. Tech Stack Summary
+## 13. Tech Stack Summary
 
 | Layer            | Library / Tool                          |
 |------------------|------------------------------------------|
@@ -435,6 +539,6 @@ When adding a feature that needs new data from GitHub:
 | Bundler          | Webpack 5 + ts-loader                    |
 | GitHub client    | `@octokit/rest` 21 (REST + GraphQL)      |
 | Diff generation  | `diff` (`createTwoFilesPatch`)           |
+| Markdown render  | `marked` (GFM) + `dompurify` (sanitize)  |
 | Persistent store | `electron-store` 8                       |
 | Packaging        | `electron-builder` 26                    |
-

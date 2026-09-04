@@ -30,7 +30,10 @@
       "!node_modules/*/{CHANGELOG.md,README.md,readme.md,test,__tests__,tests,*.ts,*.map}"
     ],
     "win": {
-      "target": ["nsis", "portable"],
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "icon": null
     },
     "nsis": {
@@ -39,11 +42,16 @@
       "allowToChangeInstallationDirectory": true
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "category": "public.app-category.developer-tools"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Development"
     },
     "publish": {
@@ -56,7 +64,9 @@
     "@octokit/rest": "^21.0.0",
     "diff": "^5.2.0",
     "diff2html": "^3.4.48",
+    "dompurify": "^3.4.13",
     "electron-store": "^8.2.0",
+    "marked": "^18.0.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

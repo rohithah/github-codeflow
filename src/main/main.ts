@@ -396,45 +396,73 @@ ipcMain.handle('github:get-file-raw', async (_event, owner: string, repo: string
 ipcMain.handle('github:get-review-threads', async (_event, owner: string, repo: string, prNumber: number) => {
   try {
     const ok = ensureOctokit();
-    const comments: any[] = [];
-    let page = 1;
-    while (true) {
-      const { data } = await ok.pulls.listReviewComments({ owner, repo, pull_number: prNumber, per_page: 100, page });
-      comments.push(...data);
-      if (data.length < 100) break;
-      page++;
-    }
+    const threadList: any[] = [];
+    let cursor: string | null = null;
+    let hasNextPage = true;
 
-    // Group into threads by in_reply_to_id
-    const threads: Record<number, any[]> = {};
-    for (const c of comments) {
-      const rootId = c.in_reply_to_id || c.id;
-      if (!threads[rootId]) threads[rootId] = [];
-      threads[rootId].push({
-        id: c.id,
-        body: c.body,
-        user: c.user?.login,
-        avatar: c.user?.avatar_url,
-        created_at: c.created_at,
-        path: c.path,
-        line: c.line || c.original_line,
-        side: c.side,
-        in_reply_to_id: c.in_reply_to_id,
-      });
-    }
+    while (hasNextPage) {
+      const result: any = await ok.graphql(`
+        query($owner: String!, $repo: String!, $prNumber: Int!, $cursor: String) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $prNumber) {
+              reviewThreads(first: 100, after: $cursor) {
+                nodes {
+                  id
+                  path
+                  line
+                  originalLine
+                  diffSide
+                  isResolved
+                  isOutdated
+                  resolvedBy { login }
+                  comments(first: 100) {
+                    nodes {
+                      databaseId
+                      body
+                      createdAt
+                      author { login avatarUrl }
+                      pullRequestReview { state }
+                    }
+                  }
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+          }
+        }
+      `, { owner, repo, prNumber, cursor });
 
-    // Build thread list with root comment info
-    const threadList = Object.values(threads).map((msgs) => {
-      msgs.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-      const root = msgs[0];
-      return {
-        id: root.id,
-        path: root.path,
-        line: root.line,
-        side: root.side,
-        comments: msgs,
-      };
-    });
+      const connection = result.repository.pullRequest.reviewThreads;
+      for (const thread of connection.nodes) {
+        const comments = thread.comments.nodes.map((comment: any) => ({
+          id: comment.databaseId,
+          body: comment.body,
+          user: comment.author?.login || 'ghost',
+          avatar: comment.author?.avatarUrl,
+          created_at: comment.createdAt,
+          reviewState: comment.pullRequestReview?.state || 'SUBMITTED',
+        }));
+        const root = comments[0];
+        if (!root) continue;
+        threadList.push({
+          id: root.id,
+          nodeId: thread.id,
+          path: thread.path,
+          line: thread.line || thread.originalLine,
+          currentLine: thread.line,
+          originalLine: thread.originalLine,
+          side: thread.diffSide || 'RIGHT',
+          isResolved: thread.isResolved,
+          isOutdated: thread.isOutdated,
+          resolvedBy: thread.resolvedBy?.login,
+          reviewState: root.reviewState,
+          comments,
+        });
+      }
+
+      hasNextPage = connection.pageInfo.hasNextPage;
+      cursor = connection.pageInfo.endCursor;
+    }
 
     console.log('[get-review-threads]', threadList.length, 'threads found');
     return { success: true, threads: threadList };

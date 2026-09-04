@@ -5,6 +5,10 @@ import FileList from './components/FileList';
 import DiffViewer from './components/DiffViewer';
 import SearchAcrossFiles from './components/SearchAcrossFiles';
 import IterationTabs, { Iteration, ActiveRange } from './components/IterationTabs';
+import CommentsNavigator, {
+  CommentNavigationItem,
+  ReviewThread,
+} from './components/CommentsNavigator';
 
 interface PRInfo {
   number: number;
@@ -38,7 +42,8 @@ function rangeShas(range: ActiveRange): { baseSha: string; headSha: string } {
   return { baseSha: range.from.headSha, headSha: range.to.headSha };
 }
 
-export default function App() {  const [authenticated, setAuthenticated] = useState(false);
+export default function App() {
+  const [authenticated, setAuthenticated] = useState(false);
   const [username, setUsername] = useState('');
   const [avatar, setAvatar] = useState('');
   const [loading, setLoading] = useState(true);
@@ -50,13 +55,16 @@ export default function App() {  const [authenticated, setAuthenticated] = useSt
   const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
   const [fullPatch, setFullPatch] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
-  const [reviewThreads, setReviewThreads] = useState<any[]>([]);
+  const [reviewThreads, setReviewThreads] = useState<ReviewThread[]>([]);
   const [viewMode, setViewMode] = useState<'split' | 'unified'>('split');
   const [pendingComments, setPendingComments] = useState<Array<{ path: string; position: number; body: string; line: number; side: string }>>([]);
   const [showSubmitReview, setShowSubmitReview] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [showFindBar, setShowFindBar] = useState(false);
   const [showSearchPanel, setShowSearchPanel] = useState(false);
+  const [showCommentsPanel, setShowCommentsPanel] = useState(false);
+  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
+  const [commentTarget, setCommentTarget] = useState<(CommentNavigationItem & { requestId: number }) | null>(null);
   const [iterations, setIterations] = useState<Iteration[]>([]);
   const [activeRange, setActiveRange] = useState<ActiveRange | null>(null);
   const diffContentRef = useRef<HTMLDivElement>(null);
@@ -70,13 +78,17 @@ export default function App() {  const [authenticated, setAuthenticated] = useSt
           e.preventDefault();
           setShowFindBar(true);
           setShowSearchPanel(false);
+          setShowCommentsPanel(false);
         }
       } else if ((e.ctrlKey || e.metaKey) && e.key === 'f' && e.shiftKey) {
         if (selectedPR) {
           e.preventDefault();
           setShowSearchPanel((prev) => !prev);
           setShowFindBar(false);
+          setShowCommentsPanel(false);
         }
+      } else if (e.key === 'Escape') {
+        setShowCommentsPanel(false);
       }
     };
     window.addEventListener('keydown', handler);
@@ -143,6 +155,9 @@ export default function App() {  const [authenticated, setAuthenticated] = useSt
     setFullPatch(null);
     setReviewThreads([]);
     setIterations([]);
+    setShowCommentsPanel(false);
+    setSelectedCommentId(null);
+    setCommentTarget(null);
     const initialRange: ActiveRange = { kind: 'all', baseSha: pr.baseSha, headSha: pr.headSha };
     setActiveRange(initialRange);
     const [filesResult, threadsResult, iterResult] = await Promise.all([
@@ -236,8 +251,37 @@ export default function App() {  const [authenticated, setAuthenticated] = useSt
     const file = files.find((f) => f.filename === filename);
     if (file && selectedPR && activeRange) {
       selectFileAndFetchDiff(file, owner, repo, activeRange);
-      setShowSearchPanel(false);
     }
+  };
+
+  const handleCommentNavigation = async (item: CommentNavigationItem) => {
+    if (!selectedPR) return;
+    setSelectedCommentId(item.id);
+    setViewMode('unified');
+    setShowFindBar(false);
+
+    const allRange: ActiveRange = {
+      kind: 'all',
+      baseSha: selectedPR.baseSha,
+      headSha: selectedPR.headSha,
+    };
+    let targetRange = activeRange || allRange;
+    let fileList = files;
+    let file = fileList.find((candidate) => candidate.filename === item.path);
+
+    if (!file || targetRange.kind !== 'all') {
+      const result = await window.api.getPRFiles(owner, repo, selectedPR.number);
+      if (!result.success) return;
+      fileList = result.files;
+      file = fileList.find((candidate) => candidate.filename === item.path);
+      targetRange = allRange;
+      setActiveRange(allRange);
+      setFiles(fileList);
+    }
+
+    if (!file) return;
+    await selectFileAndFetchDiff(file, owner, repo, targetRange);
+    setCommentTarget({ ...item, requestId: Date.now() });
   };
 
   const handleBack = () => {
@@ -247,6 +291,9 @@ export default function App() {  const [authenticated, setAuthenticated] = useSt
     setFullPatch(null);
     setIterations([]);
     setActiveRange(null);
+    setShowCommentsPanel(false);
+    setSelectedCommentId(null);
+    setCommentTarget(null);
   };
 
   if (loading) {
@@ -287,11 +334,22 @@ export default function App() {  const [authenticated, setAuthenticated] = useSt
                   Inline
                 </button>
               </div>
-              <button className="btn btn-sm" onClick={() => { setShowFindBar(!showFindBar); setShowSearchPanel(false); }} title="Find in file (Ctrl+F)">
+              <button className="btn btn-sm" onClick={() => { setShowFindBar(!showFindBar); setShowSearchPanel(false); setShowCommentsPanel(false); }} title="Find in file (Ctrl+F)">
                 🔍
               </button>
-              <button className="btn btn-sm" onClick={() => { setShowSearchPanel(!showSearchPanel); setShowFindBar(false); }} title="Search across files (Ctrl+Shift+F)">
+              <button className="btn btn-sm" onClick={() => { setShowSearchPanel(!showSearchPanel); setShowFindBar(false); setShowCommentsPanel(false); }} title="Search across files (Ctrl+Shift+F)">
                 📂🔍
+              </button>
+              <button
+                className={`btn btn-sm ${showCommentsPanel ? 'btn-active' : ''}`}
+                onClick={() => {
+                  setShowCommentsPanel((visible) => !visible);
+                  setShowSearchPanel(false);
+                  setShowFindBar(false);
+                }}
+                title="Show review comments"
+              >
+                💬 Comments ({reviewThreads.length + pendingComments.length})
               </button>
               {pendingComments.length > 0 && (
                 <button className="btn btn-sm btn-submit-review" onClick={() => setShowSubmitReview(!showSubmitReview)}>
@@ -333,6 +391,15 @@ export default function App() {  const [authenticated, setAuthenticated] = useSt
                   onGoToResult={handleSearchGoToResult}
                 />
               )}
+              {showCommentsPanel && (
+                <CommentsNavigator
+                  threads={reviewThreads}
+                  pendingComments={pendingComments}
+                  selectedId={selectedCommentId}
+                  onSelect={handleCommentNavigation}
+                  onClose={() => setShowCommentsPanel(false)}
+                />
+              )}
               <FileList
                 files={files}
                 selectedFile={selectedFile}
@@ -357,6 +424,7 @@ export default function App() {  const [authenticated, setAuthenticated] = useSt
                 onCommentPosted={refreshThreads}
                 onAddPendingComment={addPendingComment}
                 pendingComments={pendingComments}
+                commentTarget={commentTarget}
                 showFindBar={showFindBar}
                 onCloseFindBar={() => setShowFindBar(false)}
               />
